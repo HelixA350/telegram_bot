@@ -39,27 +39,27 @@ def _format_voice_response(data: dict) -> str:
     if not content:
         content = "Не удалось получить ответ. Попробуйте переформулировать вопрос."
 
-    lines = []
-    if transcription:
-        lines.append(f'🎤 Распознано: "{transcription}"\n')
-    lines.append(content)
+    header = f'🎤 Распознано: "{transcription}"\n\n' if transcription else ""
 
     source_chunks = data.get("source_chunks", [])
-    if source_chunks:
-        lines.append("\n📎 Источники:")
-        for chunk in source_chunks:
-            name = chunk.get("source", chunk.get("filename", "неизвестный файл"))
-            score = chunk.get("score", chunk.get("relevance"))
-            if score is not None:
-                try:
-                    percent = round(float(score) * 100) if float(score) <= 1 else round(float(score))
-                    lines.append(f"• {name} (релевантность: {percent}%)")
-                except (ValueError, TypeError):
-                    lines.append(f"• {name}")
-            else:
-                lines.append(f"• {name}")
+    used_indices = data.get("used_chunk_indices", [])
 
-    return "\n".join(lines)
+    if not source_chunks or not used_indices:
+        return header + content
+
+    used_chunks = [chunk for i, chunk in enumerate(source_chunks) if i in used_indices]
+    if not used_chunks:
+        return header + content
+
+    sources_lines = ["\n\n📎 Источники:"]
+    for chunk in used_chunks:
+        name = chunk.get("source", chunk.get("filename", "Документ"))
+        chunk_content = chunk.get("content", "").strip()
+        chunk_content = chunk_content.replace("**", "").replace("*", "").replace("---", "")
+        sources_lines.append(f"\n<b>{name}</b>")
+        sources_lines.append(f"\n<blockquote expandable>{chunk_content}</blockquote>")
+
+    return header + content + "".join(sources_lines)
 
 
 def _error_text(e: api_client.APIError) -> str:
@@ -113,4 +113,4 @@ async def handle_voice(message: Message, bot: Bot) -> None:
 
     response_text = _format_voice_response(data)
     for i in range(0, len(response_text), MAX_MESSAGE_LENGTH):
-        await message.answer(response_text[i : i + MAX_MESSAGE_LENGTH])
+        await message.answer(response_text[i : i + MAX_MESSAGE_LENGTH], parse_mode='HTML')
